@@ -7,10 +7,12 @@ Focus: MAKING MONEY in Jan-Jun 2024 crypto markets
 import json
 import sys
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import statistics
+import logging
 
 # Add base template to path
 base_path = os.path.join(os.path.dirname(__file__), '..', 'base-bot-template')
@@ -45,10 +47,92 @@ class BacktestResults:
     avg_loss: float
 
 
+class RealDataFetcher:
+    """
+    Fetch REAL historical data from Coinbase Pro API.
+    This replaces synthetic data for realistic backtesting.
+    """
+
+    def __init__(self):
+        self.coinbase_url = "https://api.exchange.coinbase.com"
+        self.logger = logging.getLogger(__name__)
+
+    def fetch_real_data(
+        self,
+        symbol: str,
+        start_date: str,
+        end_date: str,
+        granularity: int = 3600
+    ) -> List[Dict[str, Any]]:
+        """Fetch real historical data from Coinbase Pro."""
+        try:
+            import requests
+
+            self.logger.info(f"Fetching REAL data for {symbol} from Coinbase...")
+
+            start = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
+            end = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+
+            all_candles = []
+            max_candles_per_request = 300
+            chunk_duration = max_candles_per_request * granularity
+
+            current = start
+            request_count = 0
+
+            while current < end:
+                next_time = min(current + timedelta(seconds=chunk_duration), end)
+
+                url = f"{self.coinbase_url}/products/{symbol}/candles"
+                params = {
+                    'start': current.isoformat(),
+                    'end': next_time.isoformat(),
+                    'granularity': granularity
+                }
+
+                try:
+                    response = requests.get(url, params=params, timeout=30)
+                    response.raise_for_status()
+                    raw_candles = response.json()
+
+                    for candle in raw_candles:
+                        all_candles.append({
+                            'timestamp': datetime.fromtimestamp(candle[0], tz=timezone.utc),
+                            'open': float(candle[3]),
+                            'high': float(candle[2]),
+                            'low': float(candle[1]),
+                            'close': float(candle[4]),
+                            'volume': float(candle[5])
+                        })
+
+                    self.logger.info(f"Fetched {len(raw_candles)} candles ({current.date()} to {next_time.date()})")
+
+                    request_count += 1
+                    if request_count % 3 == 0:
+                        time.sleep(1)  # Rate limiting
+
+                except Exception as e:
+                    self.logger.error(f"Error fetching chunk: {e}")
+
+                current = next_time
+
+            all_candles.sort(key=lambda x: x['timestamp'])
+            self.logger.info(f"✅ Fetched {len(all_candles)} REAL candles from Coinbase")
+            return all_candles
+
+        except ImportError:
+            self.logger.warning("requests library not available, using synthetic data")
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to fetch real data: {e}, using synthetic data")
+            return None
+
+
 class HistoricalDataGenerator:
     """
     Generate realistic historical crypto price data.
-    
+    FALLBACK: Used only if real data fetch fails.
+
     For Jan-Jun 2024: Bull market with correction
     - Jan-March: Strong uptrend (45k → 70k)
     - April-June: Correction and consolidation (70k → 60k)
@@ -155,15 +239,64 @@ class HistoricalDataGenerator:
         return all_candles
 
 
+class EnhancedExecutionModel:
+    """
+    Realistic execution model with slippage and spreads.
+
+    Models real-world trading costs beyond just fees:
+    - Bid-ask spread (wider in low volume)
+    - Slippage (worse for larger orders)
+    - Market impact
+    """
+
+    def __init__(self, base_fee: float = 0.005, base_spread: float = 0.0005):
+        self.base_fee = base_fee  # 0.5% taker fee
+        self.base_spread = base_spread  # 0.05% base spread
+
+    def calculate_execution_price(
+        self,
+        side: str,
+        order_price: float,
+        order_size: float,
+        portfolio_value: float,
+        current_volume: float
+    ) -> tuple:
+        """Calculate realistic execution price with slippage."""
+        # 1. Bid-ask spread (wider during low volume)
+        volume_factor = max(1.0, 500 / max(current_volume, 100))
+        spread = self.base_spread * volume_factor
+
+        # 2. Order size slippage
+        position_pct = (order_size * order_price) / portfolio_value if portfolio_value > 0 else 0
+        slippage = 0.0001 * (position_pct / 0.10)  # 0.01% per 10% of portfolio
+
+        # 3. Market impact for large orders
+        if position_pct > 0.20:
+            slippage += 0.001  # Additional 0.1%
+
+        # Apply to execution price
+        if side == "buy":
+            execution_price = order_price * (1 + spread + slippage)
+            total_cost = self.base_fee + spread + slippage
+        else:  # sell
+            execution_price = order_price * (1 - spread - slippage)
+            total_cost = self.base_fee + spread + slippage
+
+        return execution_price, total_cost
+
+
 class BacktestEngine:
     """Optimized backtest engine for profitable strategy."""
-    
+
     def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.symbol = config.get("symbol", "BTC-USD")
         self.starting_cash = config.get("starting_cash", 10000.0)
         self.fee_rate = config.get("fee_rate", 0.005)
+        self.use_real_data = config.get("use_real_data", True)
+        self.real_data_fetcher = RealDataFetcher()
         self.data_generator = HistoricalDataGenerator()
+        self.execution_model = EnhancedExecutionModel()
     
     def run_backtest(self) -> BacktestResults:
         """Run backtest on Jan-Jun 2024 data."""
@@ -174,10 +307,24 @@ class BacktestEngine:
         print(f"Symbol: {self.symbol}")
         print(f"Starting Capital: ${self.starting_cash:,.2f}")
         print(f"Transaction Fees: {self.fee_rate*100}%")
+        print(f"Enhanced Slippage: ✅ ENABLED")
         print("="*60 + "\n")
-        
-        # Generate market data
-        historical_data = self.data_generator.generate_full_period()
+
+        # Try to fetch REAL data first, fall back to synthetic
+        historical_data = None
+        if self.use_real_data:
+            historical_data = self.real_data_fetcher.fetch_real_data(
+                symbol=self.symbol,
+                start_date="2024-01-01T00:00:00Z",
+                end_date="2024-06-30T23:59:59Z",
+                granularity=3600
+            )
+
+        if historical_data is None or len(historical_data) == 0:
+            print("⚠️  Using synthetic data (real data unavailable)")
+            historical_data = self.data_generator.generate_full_period()
+        else:
+            print(f"✅ Using REAL Coinbase data ({len(historical_data)} candles)\n")
         
         # Initialize strategy
         class MockExchange:
@@ -217,56 +364,76 @@ class BacktestEngine:
             # Generate signal
             signal = strategy.generate_signal(snapshot, portfolio)
             
-            # Execute trades
+            # Execute trades with enhanced slippage model
             if signal.action == "buy" and signal.size > 0 and portfolio.cash > 0:
-                max_size = portfolio.cash / (candle["close"] * (1 + self.fee_rate))
+                portfolio_value = portfolio.value(candle["close"])
+
+                # Calculate realistic execution price
+                exec_price, total_cost_pct = self.execution_model.calculate_execution_price(
+                    side="buy",
+                    order_price=candle["close"],
+                    order_size=signal.size,
+                    portfolio_value=portfolio_value,
+                    current_volume=candle.get("volume", 500)
+                )
+
+                max_size = portfolio.cash / (exec_price * (1 + total_cost_pct))
                 trade_size = min(signal.size, max_size)
-                
+
                 if trade_size > 0:
-                    trade_value = trade_size * candle["close"]
-                    fee = trade_value * self.fee_rate
-                    total_cost = trade_value + fee
-                    
+                    trade_value = trade_size * exec_price
+                    total_cost = trade_value * (1 + total_cost_pct)
+
                     if total_cost <= portfolio.cash:
                         portfolio.cash -= total_cost
                         portfolio.quantity += trade_size
                         trade_count += 1
-                        
+
                         trades.append({
                             "side": "buy",
-                            "price": candle["close"],
+                            "price": exec_price,
                             "size": trade_size,
                             "timestamp": candle["timestamp"]
                         })
-                        
-                        strategy.on_trade(signal, candle["close"], trade_size, candle["timestamp"])
-                        
+
+                        strategy.on_trade(signal, exec_price, trade_size, candle["timestamp"])
+
                         if trade_count <= 5:
-                            print(f"  #{trade_count} BUY @ ${candle['close']:,.2f} | Size: {trade_size:.6f}")
-            
+                            print(f"  #{trade_count} BUY @ ${exec_price:,.2f} | Size: {trade_size:.6f}")
+
             elif signal.action == "sell" and signal.size > 0 and portfolio.quantity > 0:
+                portfolio_value = portfolio.value(candle["close"])
+
+                # Calculate realistic execution price
+                exec_price, total_cost_pct = self.execution_model.calculate_execution_price(
+                    side="sell",
+                    order_price=candle["close"],
+                    order_size=min(signal.size, portfolio.quantity),
+                    portfolio_value=portfolio_value,
+                    current_volume=candle.get("volume", 500)
+                )
+
                 trade_size = min(signal.size, portfolio.quantity)
-                
+
                 if trade_size > 0:
-                    trade_value = trade_size * candle["close"]
-                    fee = trade_value * self.fee_rate
-                    proceeds = trade_value - fee
-                    
+                    trade_value = trade_size * exec_price
+                    proceeds = trade_value * (1 - total_cost_pct)
+
                     portfolio.quantity -= trade_size
                     portfolio.cash += proceeds
                     trade_count += 1
-                    
+
                     trades.append({
                         "side": "sell",
-                        "price": candle["close"],
+                        "price": exec_price,
                         "size": trade_size,
                         "timestamp": candle["timestamp"]
                     })
-                    
-                    strategy.on_trade(signal, candle["close"], trade_size, candle["timestamp"])
-                    
+
+                    strategy.on_trade(signal, exec_price, trade_size, candle["timestamp"])
+
                     if trade_count <= 5:
-                        print(f"  #{trade_count} SELL @ ${candle['close']:,.2f} | Size: {trade_size:.6f}")
+                        print(f"  #{trade_count} SELL @ ${exec_price:,.2f} | Size: {trade_size:.6f}")
             
             # Record equity
             equity_curve.append(portfolio.value(candle["close"]))
@@ -395,12 +562,20 @@ def print_results(results: BacktestResults):
 
 def main():
     """Main execution."""
-    # OPTIMIZED CONFIGURATION FOR PROFITABILITY
+    # Setup logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
+
+    # IMPROVED CONFIGURATION WITH REAL DATA & ENHANCED SLIPPAGE
     config = {
         "strategy": "adaptive_trend",
         "symbol": "BTC-USD",
         "starting_cash": 10000.0,
         "fee_rate": 0.005,
+        "use_real_data": True,  # Try to fetch real Coinbase data
+        "adaptive_regime": True,  # Enable regime detection
         
         # Trend detection (responsive)
         "ema_fast": 12,

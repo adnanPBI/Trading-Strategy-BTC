@@ -7,7 +7,7 @@ Focus: MAKING MONEY in Jan-Jun 2024 crypto markets
 import json
 import sys
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass
 import statistics
@@ -19,7 +19,8 @@ if not os.path.exists(base_path):
 sys.path.insert(0, base_path)
 
 # Import NEW profitable strategy
-sys.path.insert(0, os.path.dirname(__file__))
+adaptive_strategy_path = os.path.join(os.path.dirname(__file__), '..', 'adaptive-trend-strategy')
+sys.path.insert(0, adaptive_strategy_path)
 import adaptive_trend_strategy
 
 from strategy_interface import Portfolio, Signal, create_strategy
@@ -64,8 +65,8 @@ class HistoricalDataGenerator:
         
         # Daily increase to reach target
         daily_increase = (target_price - start_price) / days
-        
-        current_time = datetime(2024, 1, 1)
+
+        current_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         
         for day in range(days):
             # 24 hourly candles per day
@@ -106,8 +107,8 @@ class HistoricalDataGenerator:
         
         # Gradual decline with volatility
         daily_decrease = (start_price - target_price) / days
-        
-        current_time = datetime(2024, 4, 1)
+
+        current_time = datetime(2024, 4, 1, tzinfo=timezone.utc)
         
         for day in range(days):
             for hour in range(24):

@@ -32,110 +32,26 @@ from strategy_interface import BaseStrategy, Signal, Portfolio, register_strateg
 from exchange_interface import MarketSnapshot
 
 
-class MarketRegimeDetector:
-    """
-    Detect market regime (trend + volatility) for adaptive parameter adjustment.
-    Integrated directly into strategy for contest submission.
-    """
-
-    def __init__(self, lookback_window: int = 100):
-        self.lookback_window = lookback_window
-
-    def detect_regime(self, prices: List[float]) -> Dict[str, Any]:
-        """Analyze prices and return regime characteristics."""
-        if len(prices) < self.lookback_window:
-            return {'trend': 'unknown', 'volatility': 'unknown', 'confidence': 0.0}
-
-        recent = prices[-self.lookback_window:]
-
-        # 1. Trend detection using linear regression
-        n = len(recent)
-        x = list(range(n))
-        y = recent
-
-        sum_x = sum(x)
-        sum_y = sum(y)
-        sum_xy = sum(xi * yi for xi, yi in zip(x, y))
-        sum_x2 = sum(xi * xi for xi in x)
-
-        slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x * sum_x)
-        intercept = (sum_y - slope * sum_x) / n
-
-        avg_price = mean(recent)
-        trend_pct = (slope / avg_price) * 100
-
-        # Categorize trend
-        if trend_pct > 0.5:
-            trend = 'strong_up'
-        elif trend_pct > 0.1:
-            trend = 'weak_up'
-        elif trend_pct > -0.1:
-            trend = 'sideways'
-        elif trend_pct > -0.5:
-            trend = 'weak_down'
-        else:
-            trend = 'strong_down'
-
-        # 2. Volatility measurement
-        returns = [(y[i] - y[i-1]) / y[i-1] for i in range(1, len(y))]
-        volatility = stdev(returns) * 100
-
-        if volatility < 1.0:
-            vol_category = 'low'
-        elif volatility < 2.5:
-            vol_category = 'normal'
-        elif volatility < 5.0:
-            vol_category = 'high'
-        else:
-            vol_category = 'extreme'
-
-        # 3. R-squared for confidence
-        mean_y = mean(y)
-        ss_tot = sum((yi - mean_y) ** 2 for yi in y)
-        ss_res = sum((y[i] - (slope * x[i] + intercept)) ** 2 for i in range(n))
-        r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
-        r_squared = max(0.0, min(1.0, r_squared))
-
-        return {
-            'trend': trend,
-            'volatility': vol_category,
-            'confidence': r_squared,
-            'trend_pct': trend_pct,
-            'volatility_pct': volatility
-        }
-
-
 class AdaptiveTrendStrategy(BaseStrategy):
     """
     Adaptive Trend Following Strategy - PROFIT-FOCUSED
-
-    IMPROVEMENTS INTEGRATED:
-    1. Market regime detection (trend + volatility)
-    2. Adaptive parameter adjustment
-    3. Enhanced risk management in different regimes
-
+    
     CORE LOGIC:
     1. Identify strong trends using EMAs
     2. Buy on pullbacks to support in uptrends
     3. Scale into positions (pyramid)
     4. Take partial profits at multiple levels
     5. Use aggressive trailing stops to lock gains
-    6. ADAPT parameters based on market regime
-
+    
     WHY THIS WORKS:
     - Crypto trends strongly (Jan-Jun 2024 was bull market)
     - Pullbacks in trends are buying opportunities
     - Partial exits reduce risk, let winners run
     - Trailing stops protect gains in corrections
-    - Regime detection improves risk-adjusted returns
     """
 
     def __init__(self, config: Dict[str, Any], exchange):
         super().__init__(config=config, exchange=exchange)
-
-        # Store base configuration for regime adaptation
-        self.base_config = config.copy()
-        self.adaptive_regime = config.get("adaptive_regime", True)
         
         # Trend identification
         self.ema_fast = int(config.get("ema_fast", 12))
@@ -171,11 +87,7 @@ class AdaptiveTrendStrategy(BaseStrategy):
         self.last_trade_time: Optional[datetime] = None
         self.highest_price_since_entry: Optional[float] = None
         self.profit_targets_hit: List[bool] = [False, False, False]
-
-        # Market regime detection
-        self.regime_detector = MarketRegimeDetector(lookback_window=100)
-        self.current_regime = None
-
+        
         self._logger = logging.getLogger("strategy.adaptive_trend")
     
     def _calculate_ema(self, prices: List[float], period: int) -> Optional[float]:
@@ -371,66 +283,22 @@ class AdaptiveTrendStrategy(BaseStrategy):
         
         return current_pct < self.max_position_pct
     
-    def _adapt_parameters_to_regime(self, regime: Dict[str, Any]):
-        """Adapt strategy parameters based on current market regime."""
-        if not self.adaptive_regime:
-            return
-
-        # Volatility adjustments
-        if regime['volatility'] == 'low':
-            self.max_position_pct = min(0.60, self.base_config.get('max_position_pct', 0.5) * 1.2)
-        elif regime['volatility'] == 'high':
-            self.max_position_pct = self.base_config.get('max_position_pct', 0.5) * 0.7
-            self.stop_loss_pct = self.base_config.get('stop_loss_pct', 3.0) * 1.3
-            self.trailing_stop_pct = self.base_config.get('trailing_stop_pct', 1.5) * 1.3
-        elif regime['volatility'] == 'extreme':
-            self.max_position_pct = self.base_config.get('max_position_pct', 0.5) * 0.5
-            self.stop_loss_pct = self.base_config.get('stop_loss_pct', 3.0) * 1.5
-            self.trailing_stop_pct = self.base_config.get('trailing_stop_pct', 1.5) * 1.5
-
-        # Trend adjustments
-        if regime['trend'] == 'strong_up':
-            self.pullback_pct = self.base_config.get('pullback_pct', 2.0) * 1.3
-            self.max_positions = min(7, self.base_config.get('max_positions', 5) + 2)
-        elif regime['trend'] == 'sideways':
-            self.breakout_threshold = self.base_config.get('breakout_threshold', 1.5) * 1.3
-            self.max_positions = max(1, self.base_config.get('max_positions', 5) - 2)
-        elif 'down' in regime['trend']:
-            self.max_positions = 1
-            self.stop_loss_pct = self.base_config.get('stop_loss_pct', 3.0) * 0.8
-
     def generate_signal(self, market: MarketSnapshot, portfolio: Portfolio) -> Signal:
         """Main strategy logic - generates trading signals."""
         now = market.timestamp if isinstance(market.timestamp, datetime) else datetime.now(timezone.utc)
         current_price = market.current_price
-
+        
         # Need enough data for indicators
         if len(market.prices) < self.ema_slow + 20:
             return Signal("hold", reason="Warming up - need more data")
-
-        # Detect market regime and adapt parameters
-        if self.adaptive_regime and len(market.prices) >= 100:
-            regime = self.regime_detector.detect_regime(market.prices)
-            self.current_regime = regime
-
-            # Adapt parameters based on regime
-            self._adapt_parameters_to_regime(regime)
-
-            # Log regime every 100 candles for monitoring
-            if len(market.prices) % 100 == 0:
-                self._logger.info(
-                    f"Regime | Trend: {regime['trend']} ({regime['trend_pct']:+.2f}%) | "
-                    f"Volatility: {regime['volatility']} ({regime['volatility_pct']:.2f}%) | "
-                    f"Confidence: {regime['confidence']:.2f}"
-                )
-
+        
         # Detect market trend
         trend = self._detect_trend(market.prices)
-
+        
         # Update trailing high
         if self.positions and current_price > (self.highest_price_since_entry or 0):
             self.highest_price_since_entry = current_price
-
+        
         # Log market state
         ema_fast = self._calculate_ema(market.prices, self.ema_fast)
         ema_slow = self._calculate_ema(market.prices, self.ema_slow)

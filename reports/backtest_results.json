@@ -1,12 +1,10 @@
 {
-  "timestamp": "2025-11-05T04:52:01.796987",
+  "timestamp": "2025-11-05T06:08:48.607068",
   "config": {
     "strategy": "adaptive_trend",
     "symbol": "BTC-USD",
     "starting_cash": 10000.0,
     "fee_rate": 0.005,
-    "use_real_data": true,
-    "adaptive_regime": true,
     "ema_fast": 12,
     "ema_slow": 26,
     "trend_strength_threshold": 0.02,
@@ -25,13 +23,13 @@
   },
   "results": {
     "starting_capital": 10000.0,
-    "ending_capital": 9825.342413634253,
-    "total_return_pct": -1.7465758636574717,
-    "total_pnl": -174.6575863657472,
-    "max_drawdown_pct": 16.733334529886978,
-    "sharpe_ratio": -0.07150430276463154,
-    "profit_factor": 1375.199699451352,
-    "total_trades": 452,
-    "win_rate": 90.84967320261438
+    "ending_capital": 14282.301314624176,
+    "total_return_pct": 42.823013146241756,
+    "total_pnl": 4282.301314624176,
+    "max_drawdown_pct": 17.730169846544488,
+    "sharpe_ratio": 3.543490440178401,
+    "profit_factor": 8926.823738531806,
+    "total_trades": 555,
+    "win_rate": 93.6046511627907
   }
 }

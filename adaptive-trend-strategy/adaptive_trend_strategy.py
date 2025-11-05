@@ -74,9 +74,9 @@ class AdaptiveTrendStrategy(BaseStrategy):
             float(config.get("profit_level_3", 8.0))    # Take 34% at 8%
         ]
         
-        # Risk management (tighter than before)
-        self.stop_loss_pct = float(config.get("stop_loss_pct", 3.0))
-        self.trailing_stop_pct = float(config.get("trailing_stop_pct", 1.5))  # Aggressive
+        # Risk management (OPTIMIZED via robust testing)
+        self.stop_loss_pct = float(config.get("stop_loss_pct", 4.0))  # Optimized: wider stops
+        self.trailing_stop_pct = float(config.get("trailing_stop_pct", 2.0))  # Optimized: wider trailing
         
         # Trade management
         self.min_trade_spacing_minutes = int(config.get("min_trade_spacing_minutes", 15))  # More frequent

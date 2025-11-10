@@ -1,19 +1,14 @@
 #!/usr/bin/env python3
 """
-WINNING Backtest Runner - Target 25-35% to Compete
+BUY-AND-HOLD MAXIMIZER Backtest - Match +26.70% Winner
 
-Previous failures:
-- Original: 6.42% (too conservative)
-- Aggressive: 4.97% (wrong approach)
-- Bulletproof: 0.83% with ONLY 8 TRADES! (way too strict)
+WINNER'S APPROACH:
+- Buy early in bull run (Jan)
+- HOLD through entire move (45k→70k)
+- Exit only on catastrophic crash (>40%)
+- Result: +26.70% (BTC: +26.41%, ETH: +27.00%)
 
-THIS VERSION:
-- Target: 25-35% returns
-- Expected trades: 30-50+
-- Contest rules: 55% max position, end June 30
-- Leader has: 30.71%
-
-KEY: Actually TRADE to capture the bull run!
+TARGET: >=+20% return
 """
 
 import json
@@ -24,16 +19,14 @@ from typing import Dict, List, Any
 from dataclasses import dataclass
 import statistics
 
-# Import WINNING strategy
 strategy_path = os.path.join(os.path.dirname(__file__), '..', 'adaptive-trend-strategy')
 sys.path.insert(0, strategy_path)
 
-from winning_strategy import WinningTrendStrategy
+from buyhold_maximizer import BuyAndHoldMaximizer
 
 
 @dataclass
 class Portfolio:
-    """Portfolio state."""
     symbol: str
     cash: float
     quantity: float
@@ -44,7 +37,6 @@ class Portfolio:
 
 @dataclass
 class Signal:
-    """Trading signal."""
     action: str
     size: float = 0.0
     reason: str = ""
@@ -53,7 +45,6 @@ class Signal:
 
 @dataclass
 class MarketSnapshot:
-    """Market data snapshot."""
     symbol: str
     prices: List[float]
     current_price: float
@@ -62,7 +53,6 @@ class MarketSnapshot:
 
 @dataclass
 class BacktestResults:
-    """Results."""
     starting_capital: float
     ending_capital: float
     total_return_pct: float
@@ -79,10 +69,10 @@ class BacktestResults:
 
 
 class HistoricalDataGenerator:
-    """Generate Jan-Jun 30, 2024 market data (CONTEST RULES)."""
+    """Generate HOURLY data for Jan 1 - June 30, 2024."""
     
     def generate_bullish_market(self, days: int = 90) -> List[Dict[str, Any]]:
-        """Bull market Jan-Mar (45k→70k)."""
+        """Bull market Jan-Mar (45k→70k) - HOURLY data."""
         import random
         
         candles = []
@@ -90,7 +80,7 @@ class HistoricalDataGenerator:
         current_price = start_price
         target_price = 70000
         daily_increase = (target_price - start_price) / days
-        current_time = datetime(2024, 1, 1)
+        current_time = datetime(2024, 1, 1, 0, 0, 0)
         
         for day in range(days):
             for hour in range(24):
@@ -112,12 +102,12 @@ class HistoricalDataGenerator:
                 })
                 
                 current_price = new_price
-                current_time += timedelta(hours=1)
+                current_time += timedelta(hours=1)  # HOURLY
         
         return candles
     
     def generate_correction_market(self, days: int = 90) -> List[Dict[str, Any]]:
-        """Correction Apr-Jun 30 (70k→60k) - ENDS JUNE 30 per rules."""
+        """Correction Apr-Jun 30 (70k→60k) - HOURLY data."""
         import random
         
         candles = []
@@ -125,11 +115,11 @@ class HistoricalDataGenerator:
         current_price = start_price
         target_price = 60000
         daily_decrease = (start_price - target_price) / days
-        current_time = datetime(2024, 4, 1)
+        current_time = datetime(2024, 4, 1, 0, 0, 0)
         
         for day in range(days):
             for hour in range(24):
-                # STOP AT JUNE 30 (contest rule)
+                # STOP AT JUNE 30
                 if current_time >= datetime(2024, 7, 1):
                     break
                 
@@ -155,7 +145,7 @@ class HistoricalDataGenerator:
                 })
                 
                 current_price = new_price
-                current_time += timedelta(hours=1)
+                current_time += timedelta(hours=1)  # HOURLY
             
             if current_time >= datetime(2024, 7, 1):
                 break
@@ -163,21 +153,21 @@ class HistoricalDataGenerator:
         return candles
     
     def generate_full_period(self) -> List[Dict[str, Any]]:
-        """Generate Jan 1 - June 30, 2024 (CONTEST RULES)."""
-        print("📊 Generating Jan 1 - June 30, 2024 data (contest period)...")
+        """Generate HOURLY data for Jan 1 - June 30, 2024."""
+        print("📊 Generating HOURLY data: Jan 1 - June 30, 2024...")
         bull = self.generate_bullish_market(90)
         correction = self.generate_correction_market(90)
         all_candles = bull + correction
         
-        # Filter to ensure ends June 30
+        # Ensure ends June 30
         all_candles = [c for c in all_candles if c["timestamp"] < datetime(2024, 7, 1)]
         
-        print(f"   ✅ {len(all_candles)} hourly candles (Jan 1 - June 30)\n")
+        print(f"   ✅ {len(all_candles)} HOURLY candles generated\n")
         return all_candles
 
 
 class BacktestEngine:
-    """Winning backtest engine."""
+    """Buy-and-hold maximizer backtest engine."""
     
     def __init__(self, config: Dict[str, Any]):
         self.config = config
@@ -187,32 +177,29 @@ class BacktestEngine:
         self.data_generator = HistoricalDataGenerator()
     
     def run_backtest(self) -> BacktestResults:
-        """Run winning backtest."""
+        """Run buy-and-hold maximizer backtest."""
         print("\n" + "="*70)
-        print("🏆 WINNING STRATEGY BACKTEST - TARGET 25-35%")
+        print("🏆 BUY-AND-HOLD MAXIMIZER - Match +26.70% Winner")
         print("="*70)
-        print(f"Strategy: Winning Trend (TRADE MORE, WIN MORE)")
-        print(f"Period: Jan 1 - June 30, 2024 (contest rules)")
+        print(f"Strategy: Buy early, HOLD through trends, exit only on crash")
+        print(f"Period: Jan 1 - June 30, 2024 (HOURLY data)")
         print(f"Starting Capital: ${self.starting_cash:,.2f}")
-        print(f"Fee Rate: {self.fee_rate*100}%")
-        print(f"Max Position: {self.config.get('max_position_pct', 0.55)*100}% (contest rule)")
+        print(f"Position Size: 55% (contest rule)")
+        print(f"Exit Trigger: >40% crash OR strong downtrend")
         print("="*70)
         
-        print("\n🎯 WINNING FORMULA:")
-        print("  ✅ Trade frequently (30-50+ trades)")
-        print("  ✅ Enter uptrends early (direct entries)")
-        print("  ✅ Take profits at 5%/10%/20% (capture moves)")
-        print("  ✅ 55% max position (contest rules)")
-        print("  ✅ 4% trailing, 6% stop (balanced)")
-        print("  ✅ Simple filters (no over-optimization)")
-        print("="*70)
-        print(f"\n🎯 GOAL: Beat leader's 30.71% or get close!")
+        print("\n🎯 WINNER'S FORMULA:")
+        print("  ✅ Enter immediately in uptrend")
+        print("  ✅ HOLD through small dips (NO 4% trailing stop)")
+        print("  ✅ NO profit taking at 5%/10%/20%")
+        print("  ✅ Exit only on catastrophic crash (>40%)")
+        print("  ✅ Target: >=+20% (winner got +26.70%)")
         print("="*70 + "\n")
         
         historical_data = self.data_generator.generate_full_period()
         
-        # Initialize WINNING strategy
-        strategy = WinningTrendStrategy(self.config, exchange=None)
+        # Initialize strategy
+        strategy = BuyAndHoldMaximizer(self.config, exchange=None)
         
         portfolio = Portfolio(
             symbol=self.symbol,
@@ -225,9 +212,9 @@ class BacktestEngine:
         price_history = []
         trade_count = 0
         
-        print("🔄 Running winning strategy...\n")
+        print("🔄 Running buy-and-hold maximizer...\n")
         
-        # Run simulation
+        # Run simulation on HOURLY data
         for i, candle in enumerate(historical_data):
             price_history.append(candle["close"])
             
@@ -265,8 +252,7 @@ class BacktestEngine:
                         
                         strategy.on_trade(signal, candle["close"], trade_size, candle["timestamp"])
                         
-                        if trade_count <= 20 or trade_count % 10 == 0:
-                            print(f"  #{trade_count:3d} BUY  @ ${candle['close']:8,.2f} | {signal.reason[:35]}")
+                        print(f"  #{trade_count:3d} BUY  @ ${candle['close']:8,.2f} | {candle['timestamp'].strftime('%Y-%m-%d %H:%M')} | {signal.reason}")
             
             # Execute SELL
             elif signal.action == "sell" and signal.size > 0 and portfolio.quantity > 0:
@@ -291,12 +277,11 @@ class BacktestEngine:
                     
                     strategy.on_trade(signal, candle["close"], trade_size, candle["timestamp"])
                     
-                    if trade_count <= 20 or trade_count % 10 == 0:
-                        print(f"  #{trade_count:3d} SELL @ ${candle['close']:8,.2f} | {signal.reason[:35]}")
+                    print(f"  #{trade_count:3d} SELL @ ${candle['close']:8,.2f} | {candle['timestamp'].strftime('%Y-%m-%d %H:%M')} | {signal.reason}")
             
             equity_curve.append(portfolio.value(candle["close"]))
         
-        print(f"\n✅ Winning strategy complete: {trade_count} trades\n")
+        print(f"\n✅ Backtest complete: {trade_count} trades\n")
         
         return self._calculate_results(trades, equity_curve, historical_data, portfolio)
     
@@ -307,12 +292,11 @@ class BacktestEngine:
         historical_data: List[Dict],
         final_portfolio: Portfolio
     ) -> BacktestResults:
-        """Calculate comprehensive metrics."""
+        """Calculate results."""
         
         final_price = historical_data[-1]["close"]
         ending_capital = final_portfolio.value(final_price)
         
-        # Match trades
         buy_trades = [t for t in trades if t["side"] == "buy"]
         sell_trades = [t for t in trades if t["side"] == "sell"]
         
@@ -388,9 +372,9 @@ class BacktestEngine:
 
 
 def print_results(results: BacktestResults):
-    """Print winning results with context."""
+    """Print results."""
     print("="*70)
-    print("🏆 WINNING STRATEGY RESULTS")
+    print("🏆 BUY-AND-HOLD MAXIMIZER RESULTS")
     print("="*70)
     
     print(f"\n💰 PERFORMANCE")
@@ -399,38 +383,26 @@ def print_results(results: BacktestResults):
     print(f"Total P&L:           ${results.total_pnl:+,.2f}")
     print(f"Total Return:        {results.total_return_pct:+.2f}%")
     
-    # Comparison
-    leader_return = 30.71
-    original_return = 6.42
-    failed1_return = 4.97
-    failed2_return = 0.83
+    winner_return = 26.70
+    target_return = 20.0
     
-    print(f"\n📈 VS COMPETITION")
-    print(f"Leader (Target):     +{leader_return:.2f}%")
-    print(f"This Strategy:       {results.total_return_pct:+.2f}%")
+    print(f"\n📈 VS TARGET")
+    print(f"Winner's Return:     +{winner_return:.2f}%")
+    print(f"Target (Minimum):    +{target_return:.2f}%")
+    print(f"Your Return:         {results.total_return_pct:+.2f}%")
     
-    if results.total_return_pct >= leader_return:
-        status = "🏆 WINNER! Beat the leader!"
-        print(status)
-    elif results.total_return_pct >= leader_return * 0.85:
-        status = "🥈 COMPETITIVE! Close to leader"
-        print(status)
-    elif results.total_return_pct >= 20:
-        status = "✅ GOOD! Top 20% likely"
-        print(status)
+    if results.total_return_pct >= winner_return:
+        status = "🏆 MATCH OR BEAT WINNER!"
+        print(f"\n{status}")
+    elif results.total_return_pct >= target_return:
+        status = "✅ TARGET ACHIEVED!"
+        print(f"\n{status}")
     elif results.total_return_pct >= 15:
-        status = "⚠️ OK - Middle of pack"
-        print(status)
+        status = "⚠️ CLOSE TO TARGET"
+        print(f"\n{status}")
     else:
-        status = "❌ NEEDS WORK"
-        print(status)
-    
-    print(f"\n📊 TRADE HISTORY")
-    print(f"Original (6.42%):    8-15 trades")
-    print(f"Failed Aggressive:   20-30 trades → 4.97% ❌")
-    print(f"Failed Conservative: 8 trades → 0.83% ❌")
-    print(f"THIS STRATEGY:       {results.total_trades} trades → {results.total_return_pct:+.2f}% ", end="")
-    print("✅" if results.total_trades >= 20 else "⚠️")
+        status = "❌ BELOW TARGET"
+        print(f"\n{status}")
     
     print(f"\n⚠️ RISK METRICS")
     print(f"Max Drawdown:        {results.max_drawdown_pct:.2f}%")
@@ -446,22 +418,18 @@ def print_results(results: BacktestResults):
     print(f"Average Loss:        -{results.avg_loss:.2f}%")
     
     print(f"\n✅ CONTEST REQUIREMENTS")
-    trades_pass = "✅ PASS" if results.total_trades >= 10 else "❌ FAIL"
-    dd_pass = "✅ PASS" if results.max_drawdown_pct < 50 else "❌ FAIL"
-    return_pass = "✅ PASS" if results.total_return_pct > 0 else "❌ FAIL"
+    print(f"Min 10 trades:       {'✅' if results.total_trades >= 10 else '❌'} ({results.total_trades})")
+    print(f"Max DD < 50%:        {'✅' if results.max_drawdown_pct < 50 else '❌'} ({results.max_drawdown_pct:.1f}%)")
+    print(f"Return >= 20%:       {'✅' if results.total_return_pct >= 20 else '❌'} ({results.total_return_pct:+.2f}%)")
     
-    print(f"Min 10 trades:       {trades_pass} ({results.total_trades} trades)")
-    print(f"Max DD < 50%:        {dd_pass} ({results.max_drawdown_pct:.1f}%)")
-    print(f"Positive returns:    {return_pass} ({results.total_return_pct:+.2f}%)")
-    
-    print(f"\n🎯 FINAL STATUS: {status}")
+    print(f"\n🎯 STATUS: {status}")
     print("="*70 + "\n")
 
 
 def main():
-    """Main execution with WINNING configuration."""
+    """Main execution."""
     
-    # WINNING CONFIG - Balance between trading and performance
+    # BUY-AND-HOLD MAXIMIZER CONFIG
     config = {
         "symbol": "BTC-USD",
         "starting_cash": 10000.0,
@@ -470,35 +438,24 @@ def main():
         # Simple trend detection
         "ema_fast": 12,
         "ema_slow": 26,
+        "min_trend_strength": 0.02,  # 2% for clear uptrend
         
-        # EASIER entry criteria (trade more!)
-        "min_trend_strength": 0.015,  # 1.5% (easier)
-        "pullback_pct": 2.0,  # 2%
-        "breakout_threshold": 1.0,  # 1%
+        # Position sizing (CONTEST RULE: 55%)
+        "initial_position_pct": 0.55,  # 55% immediately
+        "max_position_pct": 0.55,  # 55% max
         
-        # SMART position sizing (contest rules: 55% max)
-        "initial_position_pct": 0.25,  # 25%
-        "max_position_pct": 0.55,  # 55% (CONTEST RULE)
-        "pyramid_size_pct": 0.15,  # 15%
+        # Exit only on catastrophic events
+        "catastrophic_crash_pct": 40.0,  # 40% crash
+        "strong_downtrend_threshold": 0.05,  # 5% EMA reversal
         
-        # BALANCED profit taking
-        "profit_level_1": 5.0,  # 5% (quick)
-        "profit_level_2": 10.0,  # 10% (medium)
-        "profit_level_3": 20.0,  # 20% (let some run)
-        
-        # BALANCED stops
-        "stop_loss_pct": 6.0,  # 6%
-        "trailing_stop_pct": 4.0,  # 4%
-        
-        # TRADE MORE
-        "min_trade_spacing_minutes": 5,  # 5min (fast)
-        "max_positions": 5  # 5
+        # Trade management
+        "min_trade_spacing_hours": 4,  # 4 hours between trades
+        "reentry_dip_pct": 3.0  # 3% dip for re-entry
     }
     
-    print("\n🔧 WINNING CONFIGURATION")
+    print("\n🔧 BUY-AND-HOLD MAXIMIZER CONFIG")
     print("="*70)
-    print("Goal: 25-35% to compete with leader's 30.71%")
-    print("Strategy: Trade MORE, capture moves, take profits")
+    print("Match winner's +26.70% with simple buy-and-hold")
     print("="*70 + "\n")
     
     engine = BacktestEngine(config)
@@ -508,10 +465,11 @@ def main():
     # Save results
     report = {
         "timestamp": datetime.now().isoformat(),
-        "version": "WINNING",
-        "contest_rules_applied": {
-            "max_position_pct": 0.55,
-            "end_date": "2024-06-30"
+        "version": "BUY_AND_HOLD_MAXIMIZER",
+        "contest_rules": {
+            "max_position": "55%",
+            "end_date": "2024-06-30",
+            "data_interval": "HOURLY"
         },
         "config": config,
         "results": {
@@ -524,35 +482,24 @@ def main():
             "profit_factor": results.profit_factor,
             "total_trades": results.total_trades,
             "win_rate": results.win_rate,
-            "vs_leader": results.total_return_pct - 30.71,
-            "vs_original": results.total_return_pct - 6.42
+            "vs_winner": results.total_return_pct - 26.70
         }
     }
     
-    output_path = os.path.join(os.path.dirname(__file__), "backtest_results_WINNING.json")
+    output_path = os.path.join(os.path.dirname(__file__), "backtest_results_BUYHOLD.json")
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2)
     
-    print(f"💾 Results saved to: {output_path}")
+    print(f"💾 Results saved to: {output_path}\n")
     
-    # Final assessment
-    if results.total_return_pct >= 30:
-        print("\n🏆 EXCELLENT! Competitive with leader!")
-        print("   → Submit IMMEDIATELY!")
-    elif results.total_return_pct >= 25:
-        print("\n✅ VERY GOOD! Strong performance")
-        print("   → Competitive for top 10")
+    if results.total_return_pct >= 26:
+        print("🏆 EXCELLENT! Matched or beat the winner!")
     elif results.total_return_pct >= 20:
-        print("\n✅ GOOD! Solid returns")
-        print("   → Consider minor tuning for 25%+")
+        print("✅ GREAT! Target achieved (>=20%)")
     elif results.total_return_pct >= 15:
-        print("\n⚠️ DECENT but below target")
-        print("   → Needs parameter adjustment")
+        print("⚠️ CLOSE! Minor tuning needed")
     else:
-        print("\n❌ Below expectations")
-        print("   → Review strategy logic")
-    
-    print()
+        print("❌ Below target - review strategy")
 
 
 if __name__ == "__main__":
